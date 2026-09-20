@@ -4,4 +4,4 @@
   - اگر فرانت را جای دیگری (مثلاً Cloudflare) می‌گذارید: آدرس Render را بنویسید،
     بدون / در انتها. مثال:  window.APP_API_BASE = "https://esperlous-test.onrender.com";
 */
-window.APP_API_BASE = "https://esperlous-test.onrender.com";
+window.APP_API_BASE = "https://gym-yp5h.onrender.com";
