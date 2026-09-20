@@ -1,0 +1,11 @@
+# انتشار فرانت روی Netlify: فقط پوشه public (همان index.html) منتشر می‌شود.
+# بک‌اند (server.js) همچنان روی Render اجرا می‌شود و به این فایل ربطی ندارد.
+[build]
+  publish = "public"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
