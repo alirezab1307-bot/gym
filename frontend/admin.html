@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>درخواست‌های جلسه رایگان | مدیریت</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+  body{margin:0;font-family:Vazirmatn,Tahoma,sans-serif;background:#eef0f2;color:#161a20;padding:24px;line-height:1.7}
+  .box{max-width:960px;margin:auto}
+  h1{font-size:1.6rem;margin:0 0 6px}
+  .card{background:#fff;border-radius:14px;padding:20px;margin-top:16px;border:1px solid #d5d9de}
+  input,button{font:inherit;padding:10px 14px;border-radius:10px;border:2px solid #d5d9de}
+  button{background:#161a20;color:#fff;border-color:#161a20;cursor:pointer;font-weight:700}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row input{flex:1;min-width:200px}
+  table{width:100%;border-collapse:collapse;margin-top:14px}
+  th,td{text-align:right;padding:10px 8px;border-bottom:1px solid #d5d9de;font-size:.95rem}
+  .wrapper{overflow-x:auto}
+  .msg{color:#d6342c;font-weight:600;margin-top:10px}
+  .muted{color:#5b6572}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>درخواست‌های جلسه رایگان</h1>
+  <p class="muted">این صفحه فقط با «توکن مدیر» که روی سرور (Railway) تنظیم کرده‌اید کار می‌کند. توکن در مرورگر ذخیره نمی‌شود.</p>
+  <div class="card">
+    <div class="row">
+      <input id="token" type="password" placeholder="توکن مدیر (ADMIN_TOKEN)" autocomplete="off">
+      <button id="load" type="button">نمایش درخواست‌ها</button>
+    </div>
+    <div class="msg" id="msg" role="alert"></div>
+  </div>
+  <div class="card" id="result" hidden>
+    <div class="row"><strong id="count"></strong><input id="q" placeholder="جستجو در نام یا شماره"></div>
+    <div class="wrapper"><table><thead><tr><th>تاریخ</th><th>نام</th><th>موبایل</th><th>هدف</th><th>زمان</th></tr></thead><tbody id="rows"></tbody></table></div>
+  </div>
+</div>
+<script src="assets/config.js"></script>
+<script>
+(function(){
+  var items=[];
+  var $=function(s){return document.querySelector(s)};
+  function render(){
+    var q=$('#q').value.trim();
+    var list=items.filter(function(r){return !q||r.name.indexOf(q)>-1||r.phone.indexOf(q)>-1});
+    $('#count').textContent=list.length.toLocaleString('fa-IR')+' درخواست';
+    var tb=$('#rows'); tb.innerHTML='';
+    list.forEach(function(r){
+      var tr=document.createElement('tr');
+      [new Date(r.createdAt).toLocaleString('fa-IR'), r.name, r.phone, r.goal, r.time].forEach(function(v){
+        var td=document.createElement('td'); td.textContent=v; tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+  $('#q').addEventListener('input',render);
+  $('#load').addEventListener('click',function(){
+    var api=((window.APP_CONFIG&&window.APP_CONFIG.API_URL)||'').replace(/\/+$/,'');
+    var msg=$('#msg'); msg.textContent='';
+    if(!api){msg.textContent='API_URL در فایل assets/config.js خالی است. اگر از Netlify Forms استفاده می‌کنید، درخواست‌ها را در پنل Netlify ببینید.';return}
+    fetch(api+'/api/registrations',{headers:{Authorization:'Bearer '+$('#token').value}})
+      .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.error||'خطا');return j})})
+      .then(function(j){items=j.items;$('#result').hidden=false;render()})
+      .catch(function(e){msg.textContent=e.message==='Failed to fetch'?'اتصال به سرور برقرار نشد.':e.message});
+  });
+})();
+</script>
+</body>
+</html>
