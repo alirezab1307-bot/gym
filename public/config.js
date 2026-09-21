@@ -9,13 +9,13 @@
      - phone: شماره برای لینک تماس (بدون فاصله). whatsapp: شماره با کد کشور، مثل 989121234567
      - telegram: نام کاربری بدون @ ، هر فیلد خالی باشد نمایش داده نمی‌شود.
 */
-window.APP_API_BASE = "";
+window.APP_API_BASE = "https://gympelt.netlify.app/panel.html";
 
 window.APP_CONTACT = {
   phone: "02100000000",
   phoneDisplay: "۰۲۱-۰۰۰۰۰۰۰۰",
   whatsapp: "",
   telegram: "",
-  address: "تهران، خیابان نمونه، پلاک ۱۲ (آدرس واقعی را اینجا بنویسید)",
+  address: "کرمانشاه سیمتری دوم نبش خیابان شیخ بهایی",
   hours: "شنبه تا پنجشنبه، ۹ تا ۲۰"
 };
