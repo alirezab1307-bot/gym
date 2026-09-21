@@ -1,7 +1,12 @@
-# انتشار فرانت روی Netlify: فقط پوشه public (همان index.html) منتشر می‌شود.
-# بک‌اند (server.js) همچنان روی Render اجرا می‌شود و به این فایل ربطی ندارد.
+# انتشار فرانت روی Netlify: فقط پوشه public منتشر می‌شود (صفحه‌ی معرفی + پنل).
+# بک‌اند (server.js) روی Render اجرا می‌شود و به این فایل ربطی ندارد.
 [build]
   publish = "public"
+
+[[redirects]]
+  from = "/panel"
+  to = "/panel.html"
+  status = 200
 
 [[headers]]
   for = "/*"
@@ -9,3 +14,8 @@
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[headers]]
+  for = "/panel.html"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

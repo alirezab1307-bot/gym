@@ -313,8 +313,16 @@ function publicAccount(acc) {
 /* ---------------------------------------------------------------
    سرو فایل‌های استاتیک (خود برنامه)
    --------------------------------------------------------------- */
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json' };
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml'
+};
+// آدرس‌های کوتاه: /panel همان پنل مشاوران است (صفحه‌ی اصلی / اکنون صفحه‌ی معرفی عمومی است)
+const STATIC_ALIAS = { '/panel': '/panel.html', '/login': '/panel.html' };
 function serveStatic(req, res, pathname) {
+  if (STATIC_ALIAS[pathname]) pathname = STATIC_ALIAS[pathname];
   let filePath = path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
   if (!filePath.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end('Forbidden'); }
   fs.readFile(filePath, (err, content) => {
@@ -328,7 +336,7 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const ext = path.extname(filePath);
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600' });
     res.end(content);
   });
 }
@@ -336,6 +344,60 @@ function serveStatic(req, res, pathname) {
 /* ---------------------------------------------------------------
    روتر اصلی API
    --------------------------------------------------------------- */
+/* ---------------------------------------------------------------
+   محدودیت تعداد درخواست (ضدسوءاستفاده) — در حافظه، بدون وابستگی
+   --------------------------------------------------------------- */
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  return (xff ? String(xff).split(',')[0].trim() : (req.socket && req.socket.remoteAddress)) || 'unknown';
+}
+function makeLimiter(max, windowMs) {
+  const hits = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, list] of hits) {
+      const fresh = list.filter(t => now - t < windowMs);
+      if (fresh.length) hits.set(k, fresh); else hits.delete(k);
+    }
+  }, 10 * 60 * 1000).unref();
+  return {
+    // ثبت یک تلاش؛ اگر از سقف گذشته باشد true برمی‌گرداند
+    hit(key) {
+      const now = Date.now();
+      const list = (hits.get(key) || []).filter(t => now - t < windowMs);
+      const over = list.length >= max;
+      if (!over) list.push(now);
+      hits.set(key, list);
+      return over;
+    },
+    blocked(key) {
+      const now = Date.now();
+      return (hits.get(key) || []).filter(t => now - t < windowMs).length >= max;
+    },
+    reset(key) { hits.delete(key); }
+  };
+}
+const leadLimiter = makeLimiter(5, 60 * 60 * 1000);       // ۵ درخواست مشاوره در ساعت از هر IP
+const loginFailLimiter = makeLimiter(10, 10 * 60 * 1000); // ۱۰ ورود ناموفق در ۱۰ دقیقه از هر IP
+
+const LEADS_KEY = 'sl_leads_v1';
+const LEAD_KINDS = ['خرید ملک', 'فروش ملک', 'رهن و اجاره', 'مشارکت در ساخت', 'ارزیابی قیمت', 'سایر'];
+const LEAD_STATUSES = ['new', 'called', 'done'];
+function normalizeIrPhone(raw) {
+  let p = String(raw || '')
+    .replace(/[۰-۹]/g, d => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\s\-()]/g, '');
+  if (p.startsWith('+98')) p = '0' + p.slice(3);
+  else if (p.startsWith('0098')) p = '0' + p.slice(4);
+  else if (p.startsWith('98') && p.length === 12) p = '0' + p.slice(2);
+  else if (/^9\d{9}$/.test(p)) p = '0' + p;
+  return p;
+}
+function cleanText(v, max) {
+  return String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = url.pathname;
@@ -384,14 +446,39 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------- ورود ---------- */
     if (pathname === '/api/login' && req.method === 'POST') {
+      const ip = clientIp(req);
+      if (loginFailLimiter.blocked(ip)) return sendJson(res, 429, { error: 'too_many_attempts' });
       const { username, password } = await readBody(req);
       const acc = getAccounts().find(a => a.username === String(username || '').toLowerCase());
       if (!acc || !verifyPassword(password, acc.passwordHash)) {
+        loginFailLimiter.hit(ip);
         return sendJson(res, 401, { error: 'invalid_credentials' });
       }
+      loginFailLimiter.reset(ip);
       const token = newToken();
       await setSession(token, acc.id);
       return sendJson(res, 200, { token, account: publicAccount(acc) });
+    }
+
+    /* ---------- درخواست مشاوره از صفحه‌ی عمومی سایت (بدون نیاز به ورود) ---------- */
+    if (pathname === '/api/leads' && req.method === 'POST') {
+      if (leadLimiter.hit(clientIp(req))) {
+        return sendJson(res, 429, { error: 'تعداد درخواست‌ها زیاد است. کمی بعد دوباره تلاش کنید.' });
+      }
+      const b = await readBody(req);
+      if (b.website) return sendJson(res, 200, { ok: true }); // ضدربات: فیلد مخفی که آدم‌ها پر نمی‌کنند
+      const name = cleanText(b.name, 60), kind = cleanText(b.kind, 30), note = cleanText(b.note, 500);
+      const phone = normalizeIrPhone(b.phone);
+      if (name.length < 2) return sendJson(res, 400, { error: 'نام را کامل وارد کنید.' });
+      if (!/^09\d{9}$/.test(phone)) return sendJson(res, 400, { error: 'شماره موبایل باید مثل ۰۹۱۲۳۴۵۶۷۸۹ باشد.' });
+      if (!LEAD_KINDS.includes(kind)) return sendJson(res, 400, { error: 'نوع درخواست را از فهرست انتخاب کنید.' });
+      const leads = (await storeGet(LEADS_KEY)) || [];
+      const dup = leads.find(l => l.phone === phone && Date.now() - Date.parse(l.createdAt) < 10 * 60 * 1000);
+      if (!dup) {
+        leads.push({ id: 'ld_' + crypto.randomBytes(6).toString('hex'), name, phone, kind, note, status: 'new', createdAt: new Date().toISOString() });
+        await storeSet(LEADS_KEY, leads.slice(-2000));
+      }
+      return sendJson(res, 201, { ok: true });
     }
 
     /* ---------- از این به بعد، همه چیز نیاز به توکن معتبر دارد ---------- */
@@ -439,6 +526,28 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/logout' && req.method === 'POST') {
       await removeSession(authed.token);
       return sendJson(res, 200, { ok: true });
+    }
+
+    /* ---------- فهرست درخواست‌های مشاوره‌ی صفحه‌ی عمومی (فقط مدیر) ---------- */
+    if (pathname === '/api/leads' && req.method === 'GET') {
+      if (authed.acc.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      return sendJson(res, 200, { leads: [...((await storeGet(LEADS_KEY)) || [])].reverse() });
+    }
+    if (/^\/api\/leads\/[^/]+$/.test(pathname) && (req.method === 'PATCH' || req.method === 'DELETE')) {
+      if (authed.acc.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+      const id = pathname.split('/')[3];
+      const leads = (await storeGet(LEADS_KEY)) || [];
+      const lead = leads.find(l => l.id === id);
+      if (!lead) return sendJson(res, 404, { error: 'not_found' });
+      if (req.method === 'DELETE') {
+        await storeSet(LEADS_KEY, leads.filter(l => l.id !== id));
+        return sendJson(res, 200, { ok: true });
+      }
+      const { status } = await readBody(req);
+      if (!LEAD_STATUSES.includes(status)) return sendJson(res, 400, { error: 'invalid_status' });
+      lead.status = status;
+      await storeSet(LEADS_KEY, leads);
+      return sendJson(res, 200, { lead });
     }
 
     /* ---------- ساخت/ویرایش/حذف حساب مشاوران (فقط مدیر) ---------- */
