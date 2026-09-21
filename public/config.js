@@ -13,7 +13,7 @@ window.APP_API_BASE = "https://gympelt.netlify.app/panel.html";
 
 window.APP_CONTACT = {
   phone: "02100000000",
-  phoneDisplay: "۰۲۱-۰۰۰۰۰۰۰۰",
+  phoneDisplay: "55555",
   whatsapp: "",
   telegram: "",
   address: "کرمانشاه سیمتری دوم نبش خیابان شیخ بهایی",
